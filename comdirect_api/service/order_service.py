@@ -27,8 +27,8 @@ class OrderService:
         """
         kwargs_mapping = {
             "instrument_id": "instrumentId",
-            "wkn": "WKN",
-            "isin": "ISIN",
+            "wkn": "wkn",          # Dokumentation ist falsch, wkn muss klein geschrieben werden!
+            "isin": "isin",
             "mneomic": "mneomic",
             "venue_id": "venueId",
             "side": "side",
@@ -45,7 +45,8 @@ class OrderService:
                 raise ValueError("Keyword argument {} is invalid".format(arg))
             else:
                 params[api_arg] = val
-        response = self.session.get(url, json=params).json()
+ 
+        response = self.session.get(url, params=params).json()
         return response
 
     def get_all_orders(

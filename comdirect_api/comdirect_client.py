@@ -46,6 +46,12 @@ class ComdirectClient(
                 self.session = pickle.load(input)
                 self.auth_service = pickle.load(input)
 
+            # Es gibt im session-Objekt ein auth-Objekt
+            # Es gibt im auth_service-Objekt ein session-Objekt
+            # Alle sind nach pickle.load verschieden!
+            self.auth_service.session = self.session
+            self.session.auth = self.auth_service.auth
+
     def session_export(self, filename: str = "session.pkl"):
         with open(filename, "wb") as output:
             pickle.dump(self.session, output, pickle.HIGHEST_PROTOCOL)
