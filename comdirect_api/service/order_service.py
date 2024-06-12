@@ -22,8 +22,8 @@ class OrderService:
         """
         kwargs_mapping = {
             "instrument_id": "instrumentId",
-            "wkn": "WKN",
-            "isin": "ISIN",
+            "wkn": "wkn",          # Dokumentation ist falsch, wkn muss klein geschrieben werden!
+            "isin": "isin",
             "mneomic": "mneomic",
             "venue_id": "venueId",
             "side": "side",
@@ -40,7 +40,8 @@ class OrderService:
                 raise ValueError('Keyword argument {} is invalid'.format(arg))
             else:
                 params[api_arg] = val
-        response = self.session.get(url, json=params).json()
+        # response = self.session.get(url, json=params).json()   # Das ist ein BUG!!!
+        response = self.session.get(url, params=params).json()
         return response
 
     def get_all_orders(self, depot_id, with_instrument=False, with_executions=True, **kwargs):
@@ -90,16 +91,79 @@ class OrderService:
         """
         url = '{0}/brokerage/v3/orders/{1}'.format(self.api_url, order_id)
         params = {}
-        
+
         response = self.session.get(url, params=params)
         if response.status_code == 200:
             return response.json()
         else:
             raise OrderException(response.headers['x-http-response-info'])
 
-    def set_change_validation(self, order_id, changed_order):
+    def set_validation_order(self, order):
         """
         7.1.5 Anlage Validation Orderanlage
+        8.1.4 Anlage Validation Orderaufgabe
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :return: challange id, None, body of validation order
+        """
+        url = '{0}/brokerage/v3/orders/validation'.format(self.api_url)
+        response = self.session.post(url, json=order)
+        # Bei Erfolg wird nur der http-status_code zurückgegeben, ansonsten ist der body leer
+        if response.status_code == 201:
+            response_json = json.loads(response.headers['x-once-authentication-info'])
+
+            # print("json response header in set_validation_order:")
+            # print(response_json)
+            # print("json full response object")
+            # print(response)
+
+            # Gib challange id zurueck
+            challangeType = response_json['typ']
+
+            # Is it a P-TAN or M-TAN challenge (this would be bad because it should already
+            # have activated the session-TAN)
+            if challangeType == 'P_TAN' or challangeType == 'M_TAN':
+                return response_json['id'], response_json['challenge'], None
+            else:
+                return response_json['id'], None, json.loads(response.text)
+        else:
+            raise OrderException(response.headers['x-http-response-info'])
+
+    def set_order(self, order, challenge_id):
+        """
+        7.1.7 Anlage Orderanlage
+        8.1.5 Anlage Orderanlage
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :param challenge_id:  id der Challange aus der set_validation_order-Antwort
+        :return: Order-Object als dictionary
+        """
+        url = '{0}/brokerage/v3/orders'.format(self.api_url)
+
+        headers = {
+            'x-once-authentication-info': json.dumps({
+                "id": challenge_id
+            })
+        }
+
+        response = self.session.post(url, headers=headers, json=order)
+
+        if response.status_code == 201:
+
+            # print("json full response in set_order:")
+            # print(response.json())
+
+            return response.json()
+
+        else:
+            raise OrderException(response.status_code)
+
+    def set_change_validation(self, order_id, changed_order):
+        """
+        #TODO: das war um upstream falsch!
+        7.1.9 Anlage Validation Orderänderung und Orderlöschung
 
         :param order_id: Order-ID
         :param changed_order: Altered order from get_order
@@ -120,7 +184,7 @@ class OrderService:
 
     def set_change(self, order_id, changed_order, challenge_id, tan=None):
         """
-        7.1.11Änderung der Orde
+        7.1.11 Änderung der Order
 
         :param order_id: Order-ID
         :param changed_order: same altered order as for set_change_validation
@@ -142,6 +206,97 @@ class OrderService:
             return response.json()
         else:
             raise OrderException(response.headers['x-http-response-info'])
+
+    def set_validation_quote(self, order):
+        """
+        8.1.1 Anlage Validation Quote
+        Creates TAN challange
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :return: challange id, None, body of validation order
+        """
+        url = '{0}/brokerage/v3/quoteticket'.format(self.api_url)
+        response = self.session.post(url, json=order)
+        # Bei Erfolg wird nur der http-status_code zurückgegeben, ansonsten ist der body leer
+        if response.status_code == 201:
+            response_json = json.loads(response.headers['x-once-authentication-info'])
+
+            # print("json response header in set_validation_order:")
+            # print(response_json)
+            # print("json full response object")
+            # print(response)
+
+            # Gib challange id zurueck
+            challangeType = response_json['typ']
+
+            # Is it a P-TAN or M-TAN challenge (this would be bad because it should already
+            # have activated the session-TAN)
+            if challangeType == 'P_TAN' or challangeType == 'M_TAN':
+                return response_json['id'], response_json['challenge']
+            else:
+            # We use the session TAN
+                return response_json['id'], None, json.loads(response.text)
+        else:
+            # raise OrderException(response.headers['x-http-response-info'])
+            raise OrderException(response.text)
+
+    def set_validation_quote_tan(self, quote_ticket_id, challenge_id):
+        """
+        8.1.2  Aenderung Validierung Quote Request-Initialisierung mit TAN
+        (=Aktivierung des Quote-Tickets mit der Session-TAN)
+        Ist nur für Session-TAN implmementiert.
+
+        :param quote_ticket_id: quoteTicketId, für die die TAN-Challenge übergeben wird
+        :param challenge_id: TAN-Challenge aus der Validations-Schnittstelle
+        :return: Response status code (=204) or throw an error if it is not 204
+        """
+        # url = '{0}/brokerage/v3/orders/quoteticket/{1}'.format(self.api_url, quote_ticket_id)
+        url = '{0}/brokerage/v3/quoteticket/{1}'.format(self.api_url, quote_ticket_id)
+        # TODO: Steht falsch in der Doku, die Url muss ohne .../orders/... sein.
+        headers = {
+            'x-once-authentication-info': json.dumps({
+                "id": challenge_id
+            })
+
+        }
+
+        #response = self.session.patch(url, headers=headers, json=changed_order)
+        response = self.session.patch(url, headers=headers)
+        if response.status_code == 204:
+            return response.status_code
+        else:
+            raise OrderException(response.headers['x-http-response-info'])
+
+    def set_quote_request(self, order, quoteTicketId):
+        """
+        8.1.3 Anlage Quote Request
+        Bei diesem Aufruf wird der Quote-Request mit Referenz auf die quoteTicketId übergeben.
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :param quoteTicketId: quoteTicketId
+        :return: Ein- oder beidseitiger Quote des Handelsplatzes mit jeweiliger Quantity und Gültigkeit)
+        """
+        url = '{0}/brokerage/v3/quotes'.format(self.api_url)
+        response = self.session.post(url, json=order)
+        # (= Ein- oder beidseitiger Quote des Handelsplatzes mit jeweiliger Quantity und Gültigkeit)
+        if response.status_code == 200:
+            # response_json = json.loads(response.headers['x-once-authentication-info'])
+
+            # print("json response header in set_validation_order:")
+            # print(response_json)
+            # print("json full response object")
+            # print(response)
+
+            return response.status_code, response.json()
+
+        else:
+            # Error
+            return response.status_code, response.text
+
+        # else:
+            # raise OrderException(response.headers['x-http-response-info'])
 
 
 class OrderException(Exception):

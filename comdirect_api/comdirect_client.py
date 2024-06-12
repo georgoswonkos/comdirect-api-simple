@@ -15,7 +15,7 @@ class ComdirectClient:
     def __init__(self, client_id, client_secret, import_session=False):
         self.api_url = 'https://api.comdirect.de/api'
         self.oauth_url = 'https://api.comdirect.de'
-        
+
         if not import_session:
             self.session = requests.Session()
             self.session.headers.update({
@@ -24,11 +24,19 @@ class ComdirectClient:
             })
             self.auth_service = AuthService(client_id, client_secret, self.session, self.api_url, self.oauth_url)
         else:
+            # Import old session
             if import_session == True:
                 import_session = 'session.pkl'
             with open(import_session, 'rb') as input:
                 self.session = pickle.load(input)
                 self.auth_service = pickle.load(input)
+
+            # Es gibt im session-Objekt ein auth-Objekt
+            # Es gibt im auth_service-Objekt ein session-Objekt
+            # Alle sind nach pickle.load verschieden! Die ueberkreuzten
+            # Referenzen muessen korrekt wiederhergestellt werden.
+            self.auth_service.session = self.session
+            self.session.auth = self.auth_service.auth
 
         self.account_service = AccountService(self.session, self.api_url)
         self.depot_service = DepotService(self.session, self.api_url)
@@ -153,7 +161,7 @@ class ComdirectClient:
         :return: Response object
         """
         return self.instrument_service.get_instrument(instrument_id, order_dimensions=False, fund_distribution=False, derivative_data=False, static_data = True)
-        
+
     def get_order_dimensions(self, **kwargs):
         """
         7.1.1 Abruf Order Dimensionen
@@ -193,8 +201,33 @@ class ComdirectClient:
         """
         return self.order_service.get_order(order_id)
 
+    def set_validation_order(self, order):
+        """
+        7.1.5 Anlage Validation Orderanlage
+        8.1.4 Anlage Validation Orderaufgabe
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :return: Tuple of (challange_id, None)
+                or in the unusual case if there was no session
+                TAN activated then a tuple of (challange_id, challange)
+        """
+        return self.order_service.set_validation_order(order)
+
+    def set_order(self, order, challange_id):
+        """
+        7.1.7 Anlage Order (=Eingabe einer neuen Order)
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :param challange_id:  id-String der Challange
+        :return: Spezifizierte Order
+        """
+        return self.order_service.set_order(order, challange_id)
+
     def set_order_change_validation(self, order_id, changed_order):
         """
+        falsch!!! das ist 7.1.9
         7.1.5 Anlage Validation Orderanlage
 
         :param order_id: Order-ID
@@ -205,7 +238,7 @@ class ComdirectClient:
 
     def set_order_change(self, order_id, changed_order, challenge_id, tan=None):
         """
-        7.1.11Änderung der Orde
+        7.1.11Änderung der Order
 
         :param order_id: Order-ID
         :param changed_order: same altered order as for set_change_validation
@@ -215,6 +248,42 @@ class ComdirectClient:
         """
         return self.order_service.set_change(order_id, changed_order, challenge_id, tan)
 
+
+
+    def set_validation_quote(self, order):
+        """
+        8.1.1 Anlage Validation Quote
+        Creates TAN challange
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :return: challange id, None, body of validation order
+        """
+        return self.order_service.set_validation_quote(order)
+
+    def set_validation_quote_tan(self, quote_ticket_id, challenge_id):
+        """
+        8.1.2  Aenderung Validierung Quote Request-Initialisierung mit TAN
+        (=Aktivierung des Quote-Tickets mit der Session-TAN)
+        Ist nur für Session-TAN implmementiert.
+
+        :param quote_ticket_id: quoteTicketId, für die die TAN-Challenge übergeben wird
+        :param challenge_id: TAN-Challenge aus der Validations-Schnittstelle
+        :return: Response object which is empty here
+        """
+        return self.order_service.set_validation_quote_tan(quote_ticket_id, challenge_id)
+
+    def set_quote_request(self, order, quoteTicketId):
+        """
+        8.1.3 Anlage Quote Request
+        Bei diesem Aufruf wird der Quote-Request mit Referenz auf die quoteTicketId übergeben.
+        -> von Georg
+
+        :param order:  JSON-Objekt Order
+        :param quoteTicketId: quoteTicketId
+        :return: Ein- oder beidseitiger Quote des Handelsplatzes mit jeweiliger Quantity und Gültigkeit)
+        """
+        return self.order_service.set_quote_request(order, quoteTicketId)
 
     def get_documents(self, first_index=0, count=1000):
         """

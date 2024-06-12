@@ -27,7 +27,7 @@ class AuthService:
     def activate_session(self, tan=None):
         self.__activate_session_tan(self.session_identifier, self.challenge_id, tan)
         access_token, refresh_token = self.__oauth_cd_secondary_flow()
-        self.auth.session_tan_created(access_token, refresh_token)
+        self.auth.session_tan_created(access_token, refresh_token)  # Setze die 2 Token im auth objekt
 
     def refresh_token(self):
         url = '{0}/oauth/token'.format(self.oauth_url)
